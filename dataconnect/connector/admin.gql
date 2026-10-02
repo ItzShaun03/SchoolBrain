@@ -1,0 +1,13 @@
+# Server-only operations.
+#
+# NO_ACCESS keeps these unreachable from clients: they are callable only via
+# the Admin SDK, which is what the refreshClaims Cloud Function uses to read a
+# caller's staff row.
+
+query LookupStaffAccount($uid: String!) @auth(level: NO_ACCESS) {
+  staffAccount(key: { uid: $uid }) {
+    uid
+    staffKey
+    role
+  }
+}

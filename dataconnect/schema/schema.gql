@@ -1,0 +1,86 @@
+# School Brain data model.
+#
+# Role is stored as a lowercase String rather than an enum so it matches the
+# ROLES map in public/data.js and the `role` custom claim used by @auth
+# expressions. Valid values: admin, principal, security, teacher.
+
+# A member of staff. `staffKey` is the short id used across the app
+# ("t.dube", "admin") and matches the local part of their email.
+type Staff @table(name: "staff", key: "staffKey", singular: "staffMember") {
+  staffKey: String! @col(name: "staff_key")
+  name: String!
+  role: String!
+  # Subject names this member can teach. Empty for non-teaching roles.
+  subjects: [String!]! @default(sql: "'{}'::text[]")
+  # Optional link to the Firebase Auth account that signed in as this member.
+  account: StaffAccount
+}
+
+# Maps a Firebase Auth uid to a staff record. Keyed by uid so a signed-in user
+# can always look up their own row.
+type StaffAccount @table(name: "staff_accounts", key: "uid", singular: "staffAccount") {
+  uid: String! @col(name: "uid")
+  staffKey: String! @col(name: "staff_key")
+  role: String!
+  staff: Staff! @ref(fields: "staffKey", references: "staffKey")
+}
+
+type Class @table(name: "classes", key: "classId", singular: "schoolClass", plural: "classes") {
+  classId: String! @col(name: "class_id")
+  name: String!
+  room: String!
+}
+
+# One lesson. `dayIndex` is the sort key: day is a label ("Mon") and would
+# otherwise order alphabetically.
+type Slot @table(name: "slots", key: "slotId", singular: "slot") {
+  slotId: String! @col(name: "slot_id")
+  classId: String! @col(name: "class_id")
+  class: Class! @ref(fields: "classId", references: "classId")
+  day: String!
+  dayIndex: Int! @col(name: "day_index")
+  period: Int!
+  subject: String!
+  teacherKey: String! @col(name: "teacher_key")
+  teacher: Staff! @ref(fields: "teacherKey", references: "staffKey")
+  room: String!
+}
+
+# `marks` is a subject -> mark map held as jsonb, because the subject list is
+# shared config rather than a fixed set of columns.
+type Student @table(name: "students", key: "studentId", singular: "student") {
+  studentId: String! @col(name: "student_id")
+  name: String!
+  classId: String! @col(name: "class_id")
+  class: Class! @ref(fields: "classId", references: "classId")
+  marks: Any!
+  average: Int
+  attendance: Int
+  lowMarks: Boolean! @col(name: "low_marks")
+  lowAttendance: Boolean! @col(name: "low_attendance")
+}
+
+type Conversation @table(name: "conversations", key: "conversationId", singular: "conversation") {
+  conversationId: String! @col(name: "conversation_id")
+  title: String!
+}
+
+
+#   canPost = true   member, may post
+#   canPost = false  observer, read only
+type ConversationMember @table(name: "conversation_members", key: ["conversationId", "staffKey"]) {
+  conversationId: String! @col(name: "conversation_id")
+  staffKey: String! @col(name: "staff_key")
+  canPost: Boolean! @default(value: true) @col(name: "can_post")
+  conversation: Conversation! @ref(fields: "conversationId", references: "conversationId")
+  staff: Staff! @ref(fields: "staffKey", references: "staffKey")
+}
+
+type Message @table(name: "messages", key: "messageId", singular: "message") {
+  messageId: UUID! @default(expr: "uuidV4()") @col(name: "message_id")
+  conversationId: String! @col(name: "conversation_id")
+  conversation: Conversation! @ref(fields: "conversationId", references: "conversationId")
+  fromKey: String! @col(name: "from_key")
+  text: String!
+  createdAt: Timestamp! @default(expr: "request.time") @col(name: "created_at")
+}

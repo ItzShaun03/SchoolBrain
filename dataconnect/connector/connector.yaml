@@ -1,0 +1,12 @@
+connectorId: "default"
+generate:
+  javascriptSdk:
+    outputDir: "../../public/dataconnect-sdk"
+    package: "@schoolbrain/dataconnect"
+  # Consumed by functions/index.js to read staff_accounts with admin rights.
+  # No packageJsonDir: the function imports the generated ESM file by relative
+  # path, and letting the CLI npm-install it into functions/package.json just
+  # made the emulator try (and fail) to install on every reload.
+  adminNodeSdk:
+    outputDir: "../../functions/dataconnect-sdk"
+    package: "@schoolbrain/dataconnect-admin"

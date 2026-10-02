@@ -1,0 +1,118 @@
+# Read operations.
+#
+# `staffKey` and `role` arrive as custom claims on the ID token, set by the
+# refreshClaims Cloud Function from the staff_accounts table. @auth CEL cannot
+# read the database, so every gate below is a claim check.
+#
+# STAFF is the baseline for "a signed-in member of staff"; it is inlined
+# rather than shared because GraphQL has no macro facility.
+
+# --- Reference data: any member of staff ---
+
+query ListStaff @auth(expr: "auth != null && auth.token.staffKey != null") {
+  staffMembers(orderBy: [{ staffKey: ASC }]) {
+    staffKey
+    name
+    role
+    subjects
+  }
+}
+
+query ListClasses @auth(expr: "auth != null && auth.token.staffKey != null") {
+  classes(orderBy: [{ classId: ASC }]) {
+    classId
+    name
+    room
+  }
+}
+
+# One class's timetable, for the grid view.
+query ClassSlots($classId: String!) @auth(expr: "auth != null && auth.token.staffKey != null") {
+  slots(
+    where: { classId: { eq: $classId } }
+    orderBy: [{ dayIndex: ASC }, { period: ASC }]
+  ) {
+    slotId
+    classId
+    day
+    dayIndex
+    period
+    subject
+    teacherKey
+    room
+  }
+}
+
+# A teacher's own lessons across every class. Keyed off the claim, so a
+# teacher cannot ask for someone else's timetable.
+query MySlots @auth(expr: "auth != null && auth.token.staffKey != null") {
+  slots(
+    where: { teacherKey: { eq_expr: "auth.token.staffKey" } }
+    orderBy: [{ dayIndex: ASC }, { period: ASC }]
+  ) {
+    slotId
+    classId
+    class { name }
+    day
+    dayIndex
+    period
+    subject
+    room
+  }
+}
+
+# --- Students: admin and principal only ---
+
+query ListStudents @auth(expr: "auth.token.role == 'admin' || auth.token.role == 'principal'") {
+  students(orderBy: [{ studentId: ASC }]) {
+    studentId
+    name
+    classId
+    class { name }
+    marks
+    average
+    attendance
+    lowMarks
+    lowAttendance
+  }
+}
+
+# --- Chat ---
+#
+# Both thread queries are entered through my own conversation_members row. A
+# non-member matches no rows and gets an empty list, so thread contents are
+# unreachable without a membership check that the database can evaluate.
+
+query MyThreads @auth(expr: "auth != null && auth.token.staffKey != null") {
+  conversationMembers(where: { staffKey: { eq_expr: "auth.token.staffKey" } }) {
+    canPost
+    conversation {
+      conversationId
+      title
+    }
+  }
+}
+
+# Returns the thread (and its messages) only if the caller is a participant.
+# The list wrapper is deliberate: a non-member gets [] rather than an error.
+query ThreadMessages($conversationId: String!)
+  @auth(expr: "auth != null && auth.token.staffKey != null") {
+  conversationMembers(
+    where: {
+      conversationId: { eq: $conversationId },
+      staffKey: { eq_expr: "auth.token.staffKey" }
+    }
+  ) {
+    canPost
+    conversation {
+      conversationId
+      title
+      messages_on_conversation(orderBy: [{ createdAt: ASC }]) {
+        messageId
+        fromKey
+        text
+        createdAt
+      }
+    }
+  }
+}

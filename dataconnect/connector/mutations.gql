@@ -1,0 +1,136 @@
+# Write operations.
+#
+# Input validation lives in @auth (CEL sees `vars`); output validation lives in
+# @check, which can only attach to operations and selection fields, not to
+# input literals. Membership is checked in-transaction with a `query @redact`
+# guard, because @auth cannot read the database.
+#
+# Note: `*_insert` and `*_update` return the row's key, which has no
+# subfields, so they take no selection set.
+
+# --- First run ---
+#
+# Mirrors the old Firestore bootstrap: the very first person to sign in
+# becomes the admin, and only ever one of them. Once an admin exists this
+# mutation fails for everyone.
+mutation BootstrapAdmin($name: String!)
+  @auth(expr: "auth != null && has(vars.name) && vars.name.trim().size() > 0")
+  @transaction {
+  # An existing account for this caller means they are already provisioned.
+  existingAccount: query @redact {
+    staffAccount(key: { uid_expr: "auth.uid" })
+      @check(expr: "this == null", message: "This account is already set up.")
+    { uid }
+  }
+
+  # An existing admin means the bootstrap has already been used.
+  existingAdmin: query @redact {
+    staffMember(key: { staffKey: "admin" })
+      @check(expr: "this == null", message: "An administrator already exists. Ask them to add you.")
+    { staffKey }
+  }
+
+  staffMember_insert(
+    data: { staffKey: "admin", name: $name, role: "admin", subjects: [] }
+  )
+
+  staffAccount_insert(
+    data: { uid_expr: "auth.uid", staffKey: "admin", role: "admin" }
+  )
+}
+
+# --- Chat ---
+
+# vars.text is validated here because @check cannot reach an input literal.
+mutation SendMessage($conversationId: String!, $text: String!)
+  @auth(expr: """
+    auth != null
+    && auth.token.staffKey != null
+    && has(vars.text)
+    && vars.text.trim().size() > 0
+    && vars.text.size() <= 2000
+  """)
+  @transaction {
+  # Guard: the caller must be in the thread, and must be a member rather than
+  # an observer.
+  membership: query @redact {
+    conversationMember(
+      first: {
+        where: {
+          conversationId: { eq: $conversationId },
+          staffKey: { eq_expr: "auth.token.staffKey" }
+        }
+      }
+    )
+      @check(expr: "this != null", message: "You are not in this thread.")
+      @check(expr: "this.canPost", message: "Observers cannot post in this thread.")
+    { canPost }
+  }
+
+  message_insert(
+    data: {
+      conversationId: $conversationId,
+      fromKey_expr: "auth.token.staffKey",
+      text: $text
+    }
+  )
+}
+
+# --- Timetable ---
+
+mutation AssignTeacher($slotId: String!, $teacherKey: String!)
+  @auth(expr: "auth.token.role == 'admin' && has(vars.teacherKey) && vars.teacherKey != ''")
+  @transaction {
+  slot_update(key: { slotId: $slotId }, data: { teacherKey: $teacherKey })
+    @check(expr: "this != null", message: "That lesson no longer exists.")
+}
+
+# --- Students ---
+#
+# average/lowMarks/lowAttendance are sent by the client because a mutation
+# cannot compute them; the existing mark maths already lives in app.js. The
+# ranges below are the server-side half of that validation.
+mutation UpdateStudent(
+  $studentId: String!
+  $marks: Any!
+  $average: Int!
+  $attendance: Int!
+  $lowMarks: Boolean!
+  $lowAttendance: Boolean!
+)
+  @auth(expr: """
+    auth.token.role == 'admin'
+    && vars.average >= 0 && vars.average <= 100
+    && vars.attendance >= 0 && vars.attendance <= 100
+  """)
+  @transaction {
+  student_update(
+    key: { studentId: $studentId }
+    data: {
+      marks: $marks,
+      average: $average,
+      attendance: $attendance,
+      lowMarks: $lowMarks,
+      lowAttendance: $lowAttendance
+    }
+  )
+    @check(expr: "this != null", message: "That student no longer exists.")
+}
+
+# --- Staff provisioning ---
+
+# Lets an admin attach a Firebase Auth uid to a staff record. The
+# refreshClaims Cloud Function reads this table to set custom claims.
+mutation AddStaffAccount($uid: String!, $staffKey: String!, $role: String!)
+  @auth(expr: """
+    auth.token.role == 'admin'
+    && has(vars.uid) && vars.uid != ''
+    && has(vars.staffKey) && vars.staffKey != ''
+    && vars.role in ['admin', 'principal', 'security', 'teacher']
+  """)
+  @transaction {
+  staffAccount_insert(
+    data: { uid: $uid, staffKey: $staffKey, role: $role }
+  )
+    @check(expr: "this != null", message: "Could not add that account.")
+}

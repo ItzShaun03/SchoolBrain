@@ -1,0 +1,18 @@
+rules_version = "2";
+
+function signedIn() { return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
+function profile() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+function role() { return signedIn() ? profile().role : null; }
+function staffKey() { return signedIn() ? profile().staffKey : null; }
+function admin() { return role() == "admin"; }
+function member() { return signedIn() && staffKey() in resource.data.members; }
+function observer() { return signedIn() && staffKey() in resource.data.participants; }
+function parentMember() { return signedIn() && staffKey() in get(/databases/$(database)/documents/conversations/$(threadId)).data.members; }
+function parentObserver() { return signedIn() && staffKey() in get(/databases/$(database)/documents/conversations/$(threadId)).data.participants; }
+
+match /users/{uid} { allow read: if signedIn() && (uid == request.auth.uid || admin()); allow create: if request.auth.uid == uid && request.resource.data.role == get(/databases/$(database)/documents/staff/$(request.resource.data.staffKey)).role; allow update: if request.auth.uid == uid && request.resource.data.staffKey == staffKey() && request.resource.data.role == resource.data.role; allow delete: if false; }
+match /staff/{key} { allow read: if signedIn(); allow create: if signedIn() && key == "admin" && !exists(/databases/$(database)/documents/staff/admin) && request.resource.data.role == "admin"; allow update, delete: if admin(); }
+match /classes/{classId} { allow read: if signedIn(); allow write: if admin(); match /slots/{slotId} { allow read: if signedIn(); allow write: if admin(); } }
+match /students/{id} { allow read: if role() in ["admin", "principal"]; allow write: if admin(); }
+match /conversations/{threadId} { allow read: if member() || observer(); allow create: if admin() && staffKey() in request.resource.data.members; allow update: if admin(); allow delete: if false; match /messages/{messageId} { allow read: if parentMember() || parentObserver(); allow create: if parentMember() && request.resource.data.from == staffKey() && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000; allow update, delete: if false; } }
+match /{document=**} { allow read, write: if false; }
