@@ -8,7 +8,7 @@ const CONFIG = {
   sessionKey: "schoolbrain.session",
   storeKey: "schoolbrain.db.v1"
 };
-const DEMO = { login: "school", password: "demo" };
+const DEMO = { login: "school", password: "admin" };
 const DAYS = ["Mon","Tue","Wed","Thu","Fri"];
 const PERIODS = [["09:00","09:50"],["10:00","10:50"],["11:10","12:00"],["13:00","13:50"]];
 const SUBJECTS = ["Maths","English","Science","History"];
@@ -32,7 +32,7 @@ const FIRST = ["Amara","Bilal","Chen","Divya","Elias","Fatima","Gabriel","Hana",
 const LAST = ["Okafor","Haddad","Wong","Sharma","Nowak","Diallo","Mendes","Sato"];
 let LIVE = false;
 if (typeof window !== "undefined" && window.firebase) {
-  try { window.firebase.initializeApp(CONFIG.firebase); LIVE = true; } catch (e) { console.error("fb", e.message); }
+  try { window.firebase.initializeApp(CONFIG.firebase); LIVE = false; } catch (e) { console.error("fb", e.message); }
 }
 const db = () => window.firebase.firestore();
 function stamp(v){ if(!v)return 0; if(typeof v==="number")return v; if(typeof v.toMillis==="function")return v.toMillis(); const p=new Date(v).getTime(); return isNaN(p)?0:p; }
@@ -64,11 +64,11 @@ const store={
   async start(){ this.session=JSON.parse(localStorage.getItem(CONFIG.sessionKey)||"null"); if(this.session)this.session.caps=ROLES[this.session.role]||ROLES.teacher; return this.session; },
   async signIn(u,p,role){
     if(!u||!p) throw new Error("Enter login and password");
-    if(!LIVE){ const st=STAFF.find(([, ,sr])=>sr===role); if(u!==DEMO.login||p!==DEMO.password||!st) throw new Error("Use school/demo"); const [k,n,sr]=st; return this.setSession({staffKey:k,name:n,role:sr}); }
+    if(!LIVE){ const st=STAFF.find(([, ,sr])=>sr===role); if(u!==DEMO.login||p!==DEMO.password||!st) throw new Error("Use school/admin"); const [k,n,sr]=st; return this.setSession({staffKey:k,name:n,role:sr}); }
     const auth=window.firebase.auth(); const cred=await auth.signInWithEmailAndPassword(emailFor(u),p);
     const staffKey=emailFor(u).split("@")[0].toLowerCase();
     let staff=(await db().collection("staff").doc(staffKey).get()).data();
-    if(!staff){ await auth.signOut(); throw new Error("Not in staff directory. Ask admin."); }
+    if(!staff){ await auth.signOut(); throw new Error("Not in staff directory."); }
     await db().collection("users").doc(cred.user.uid).set({staffKey,role:staff.role});
     return this.setSession({staffKey,name:staff.name,role:staff.role});
   },
@@ -79,7 +79,7 @@ const store={
   async slots(id){ if(!LIVE)return readStore().slots.filter(s=>s.classId===id); const s=await db().collection("classes").doc(id).collection("slots").get(); return s.docs.map(d=>({id:d.id,...d.data()})); },
   async students(){ if(!LIVE)return readStore().students; const s=await db().collection("students").get(); return s.docs.map(d=>({id:d.id,...d.data()})); },
   async threads(){ const me=this.session.staffKey; if(!LIVE){ const t=readStore().threads; return Object.values(t).filter(x=>x.members.includes(me)||x.observers.includes(me)).map(x=>({id:x.id,title:x.title,canPost:x.members.includes(me)})); }
-    const s=await db().collection("conversations").get(); return s.docs.map(d=>({id:d.id,...d.data()})).filter(t=>(t.participants||[]).includes(me)||t.members?.includes(me)).map(t=>({id:t.id||t.conversationId,title:t.title,canPost:t.members?.includes(me)||false}));
+    const s=await db().collection("conversations").get(); return s.docs.map(d=>({id:d.id,...d.data()})).filter(t=>(t.participants||[]).includes(me)||t.members?.includes(me)||t.observers?.includes(me)).map(t=>({id:t.id||t.conversationId,title:t.title,canPost:(t.members||[]).includes(me)}));
   },
   async messages(tid){ if(!LIVE)return readStore().threads[tid].messages.slice(); const s=await db().collection("conversations").doc(tid).collection("messages").get(); return s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>stamp(a.createdAt)-stamp(b.createdAt)).map(m=>({id:m.id,from:m.from,text:m.text,createdAt:m.createdAt})); },
   async send(tid,txt){ const b=String(txt||"").trim(); if(!b) throw new Error("Type a message"); if(!LIVE){ const st=readStore(); st.threads[tid].messages.push({from:this.session.staffKey,text:b,createdAt:Date.now()}); localStorage.setItem(CONFIG.storeKey,JSON.stringify(st)); return; }

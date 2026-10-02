@@ -54,7 +54,7 @@ function renderLogin(message) {
         <button class="primary" type="submit">Sign in</button>
       </form>
       ${message ? `<p class="error">${esc(message)}</p>` : ""}
-      <p class="muted">Mode: <b>${store.mode}</b>${store.mode === "demo" ? ` &middot; id <b>${DEMO.login}</b> &middot; password <b>${DEMO.password}</b>` : ""}</p>
+      <p class="muted">Mode: <b>${store.mode}</b>${store.mode === "demo" ? ` &middot; id <b>${DEMO.login}</b> &middot; password <b>admin</b>` : ""}</p>
       <div class="demo-list">
         ${demoAccounts().map((s) => `<button data-demo="${s.role}">Sign in as ${ROLES[s.role].label}</button>`).join("")}
       </div>
