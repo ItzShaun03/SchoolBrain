@@ -24,7 +24,7 @@ This README will guide you through the process of using the generated JavaScript
   - [*AddStaffAccount*](#addstaffaccount)
 
 # Accessing the connector
-A connector is a collection of Queries and Mutations. One SDK is generated for each connector - this SDK is generated for the connector `default`. You can find more information about connectors in the [Data Connect documentation](https://firebase.google.com/docs/data-connect#how-does).
+A connector is a collection of Queries and Mutations. One SDK is generated for each connector - this SDK is generated for the connector `default`. You can find more information about connectors in the [Data Connect documentation](https:/ /firebase.google.com/docs/data-connect#how-does).
 
 You can use this generated SDK by importing from the package `@schoolbrain/dataconnect` as shown below. Both CommonJS and ESM imports are supported.
 
